@@ -1,0 +1,62 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Unpack project
+        run: unzip -q project_myket_ready.zip -d proj
+
+      - name: Install Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Prepare signing key
+        run: |
+          PW=$(openssl rand -hex 12)
+          keytool -genkeypair -v \
+            -keystore proj/release.keystore \
+            -alias mrprompt \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "$PW" \
+            -keypass "$PW" \
+            -dname "CN=Mr Prompt, O=Mr Prompt, C=IR"
+
+          echo "KS_FILE=$GITHUB_WORKSPACE/proj/release.keystore" >> "$GITHUB_ENV"
+          echo "KS_PASS=$PW" >> "$GITHUB_ENV"
+          echo "KS_ALIAS=mrprompt" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: proj
+        run: gradle assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MrPrompt-APK
+          path: proj/app/build/outputs/apk/release/*.apk
